@@ -51,3 +51,35 @@ class Quiz(models.Model):
 
     def __str__(self):
         return f"{self.title} (by {self.created_by.username})"
+
+
+class Question(models.Model):
+    """Question model belonging to a quiz."""
+
+    quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name='questions')
+    text = models.TextField()
+    correct_option = models.ForeignKey('Option', on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        return f"{self.quiz.title} - Q{self.id}: {self.text[:50]}..."
+
+
+class Option(models.Model):
+    """Option model belonging to a question."""
+
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='options')
+    text = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        return f"Q{self.question.id} - {self.text}"
