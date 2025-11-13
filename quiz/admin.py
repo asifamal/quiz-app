@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import User, Category, Quiz, Question, Option
+from .models import User, Category, Quiz, Question, Option, Submission, Answer
 
 
 @admin.register(User)
@@ -64,3 +64,42 @@ class OptionAdmin(admin.ModelAdmin):
         return obj.question.correct_option == obj
     is_correct.boolean = True
     is_correct.short_description = 'Correct Answer'
+
+
+class AnswerInline(admin.TabularInline):
+    model = Answer
+    extra = 0
+    readonly_fields = ('question', 'selected_option', 'is_correct', 'answered_at')
+    can_delete = False
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(Submission)
+class SubmissionAdmin(admin.ModelAdmin):
+    list_display = ('id', 'user', 'quiz', 'score', 'total_questions', 'correct_answers', 'submitted_at')
+    list_filter = ('quiz__category', 'quiz', 'submitted_at', 'user')
+    search_fields = ('user__username', 'quiz__title')
+    readonly_fields = ('submitted_at',)
+    inlines = [AnswerInline]
+    
+    def total_questions(self, obj):
+        return obj.total_questions
+    total_questions.short_description = 'Total Questions'
+    
+    def correct_answers(self, obj):
+        return obj.correct_answers
+    correct_answers.short_description = 'Correct Answers'
+
+
+@admin.register(Answer)
+class AnswerAdmin(admin.ModelAdmin):
+    list_display = ('id', 'submission', 'question_preview', 'selected_option', 'is_correct', 'answered_at')
+    list_filter = ('is_correct', 'submission__quiz__category', 'submission__quiz', 'answered_at')
+    search_fields = ('submission__user__username', 'question__text', 'selected_option__text')
+    readonly_fields = ('answered_at',)
+    
+    def question_preview(self, obj):
+        return obj.question.text[:50] + "..." if len(obj.question.text) > 50 else obj.question.text
+    question_preview.short_description = 'Question'
