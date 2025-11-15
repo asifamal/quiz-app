@@ -14,16 +14,11 @@ from .permissions import IsAdminUser, IsNormalUser, IsOwnerOrAdmin
 
 
 class RegisterView(generics.CreateAPIView):
-    """
-    API endpoint for user registration.
-    POST /api/auth/register/ to create a new user.
-    """
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
     permission_classes = (AllowAny,)
     
     def create(self, request, *args, **kwargs):
-        """Override create to return user data after registration."""
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
@@ -37,18 +32,12 @@ class RegisterView(generics.CreateAPIView):
         )
 
 
-# Admin ViewSets
 class CategoryViewSet(viewsets.ModelViewSet):
-    """
-    Admin ViewSet for managing categories.
-    CRUD operations for categories.
-    """
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
     permission_classes = [IsAuthenticated, IsAdminUser]
     
     def get_queryset(self):
-        """Optionally filter by active status."""
         queryset = Category.objects.all()
         is_active = self.request.query_params.get('is_active', None)
         if is_active is not None:
@@ -57,29 +46,21 @@ class CategoryViewSet(viewsets.ModelViewSet):
 
 
 class QuizViewSet(viewsets.ModelViewSet):
-    """
-    Admin ViewSet for managing quizzes.
-    CRUD operations for quizzes with nested questions.
-    """
     queryset = Quiz.objects.all()
     serializer_class = QuizSerializer
     permission_classes = [IsAuthenticated, IsAdminUser]
     
     def get_queryset(self):
-        """Filter quizzes with optional parameters."""
         queryset = Quiz.objects.select_related('category', 'created_by').prefetch_related('questions__options')
         
-        # Filter by category
         category = self.request.query_params.get('category', None)
         if category is not None:
             queryset = queryset.filter(category_id=category)
         
-        # Filter by active status
         is_active = self.request.query_params.get('is_active', None)
         if is_active is not None:
             queryset = queryset.filter(is_active=is_active.lower() == 'true')
         
-        # Filter by creator
         created_by = self.request.query_params.get('created_by', None)
         if created_by is not None:
             queryset = queryset.filter(created_by_id=created_by)
@@ -88,18 +69,15 @@ class QuizViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def duplicate(self, request, pk=None):
-        """Duplicate a quiz with all its questions and options."""
         original_quiz = self.get_object()
         
-        # Create new quiz
         new_quiz = Quiz.objects.create(
             title=f"{original_quiz.title} (Copy)",
             category=original_quiz.category,
             created_by=request.user,
-            is_active=False  # Start as inactive
+            is_active=False
         )
         
-        # Copy questions and options
         for question in original_quiz.questions.all():
             new_question = Question.objects.create(
                 quiz=new_quiz,
@@ -107,7 +85,6 @@ class QuizViewSet(viewsets.ModelViewSet):
                 is_active=question.is_active
             )
             
-            # Copy options and track correct option
             correct_option = None
             for option in question.options.all():
                 new_option = Option.objects.create(
@@ -117,7 +94,6 @@ class QuizViewSet(viewsets.ModelViewSet):
                 if question.correct_option == option:
                     correct_option = new_option
             
-            # Set correct option
             if correct_option:
                 new_question.correct_option = correct_option
                 new_question.save()
@@ -127,24 +103,17 @@ class QuizViewSet(viewsets.ModelViewSet):
 
 
 class QuestionViewSet(viewsets.ModelViewSet):
-    """
-    Admin ViewSet for managing questions.
-    CRUD operations for questions with nested options.
-    """
     queryset = Question.objects.all()
     serializer_class = QuestionSerializer
     permission_classes = [IsAuthenticated, IsAdminUser]
     
     def get_queryset(self):
-        """Filter questions with optional parameters."""
         queryset = Question.objects.select_related('quiz', 'correct_option').prefetch_related('options')
         
-        # Filter by quiz
         quiz = self.request.query_params.get('quiz', None)
         if quiz is not None:
             queryset = queryset.filter(quiz_id=quiz)
         
-        # Filter by active status
         is_active = self.request.query_params.get('is_active', None)
         if is_active is not None:
             queryset = queryset.filter(is_active=is_active.lower() == 'true')
@@ -153,7 +122,6 @@ class QuestionViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def add_option(self, request, pk=None):
-        """Add a new option to a question."""
         question = self.get_object()
         option_text = request.data.get('text', '')
         
@@ -166,17 +134,11 @@ class QuestionViewSet(viewsets.ModelViewSet):
         return Response(option_serializer.data, status=status.HTTP_201_CREATED)
 
 
-# User APIs
 class ActiveQuizListView(generics.ListAPIView):
-    """
-    List active quizzes for normal users.
-    GET /api/quizzes/ to get all active quizzes.
-    """
     serializer_class = QuizSerializer
     permission_classes = [IsAuthenticated, IsNormalUser]
     
     def get_queryset(self):
-        """Return only active quizzes with active questions."""
         return Quiz.objects.filter(
             is_active=True,
             category__is_active=True
@@ -186,14 +148,16 @@ class ActiveQuizListView(generics.ListAPIView):
 
 
 class SubmitQuizView(APIView):
-    """
-    Submit quiz answers and automatically calculate score.
-    POST /api/quizzes/{quiz_id}/submit/ with answers.
-    """
     permission_classes = [IsAuthenticated, IsNormalUser]
     
-    def post(self, request, quiz_id):
-        """Submit quiz answers and create submission with calculated score."""
+    def post(self, request):
+        quiz_id = request.data.get('quiz')
+        if not quiz_id:
+            return Response(
+                {'error': 'Quiz ID is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         try:
             quiz = Quiz.objects.get(id=quiz_id, is_active=True)
         except Quiz.DoesNotExist:
@@ -202,7 +166,6 @@ class SubmitQuizView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Check if quiz has active questions
         active_questions = quiz.questions.filter(is_active=True)
         if not active_questions.exists():
             return Response(
@@ -210,7 +173,6 @@ class SubmitQuizView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Validate and create submission
         serializer = QuizSubmissionSerializer(
             data=request.data, 
             context={'quiz': quiz, 'request': request}
@@ -229,25 +191,18 @@ class SubmitQuizView(APIView):
 
 
 class UserSubmissionsView(generics.ListAPIView):
-    """
-    View past submissions for the authenticated user.
-    GET /api/my-submissions/ to get user's quiz history.
-    """
     serializer_class = SubmissionSerializer
     permission_classes = [IsAuthenticated, IsNormalUser]
     
     def get_queryset(self):
-        """Return submissions for the current user."""
         queryset = Submission.objects.filter(
             user=self.request.user
         ).select_related('quiz', 'quiz__category').prefetch_related('answers__question', 'answers__selected_option')
         
-        # Filter by quiz
         quiz = self.request.query_params.get('quiz', None)
         if quiz is not None:
             queryset = queryset.filter(quiz_id=quiz)
         
-        # Filter by score range
         min_score = self.request.query_params.get('min_score', None)
         if min_score is not None:
             try:
@@ -266,10 +221,6 @@ class UserSubmissionsView(generics.ListAPIView):
 
 
 class QuizDetailView(generics.RetrieveAPIView):
-    """
-    Get detailed quiz information for taking the quiz.
-    GET /api/quizzes/{quiz_id}/ to get quiz with questions and options.
-    """
     serializer_class = QuizSerializer
     permission_classes = [IsAuthenticated, IsNormalUser]
     
@@ -281,10 +232,6 @@ class QuizDetailView(generics.RetrieveAPIView):
 
 
 class SubmissionDetailView(generics.RetrieveAPIView):
-    """
-    Get detailed submission information.
-    GET /api/submissions/{submission_id}/ to get submission with answers.
-    """
     serializer_class = SubmissionSerializer
     permission_classes = [IsAuthenticated, IsOwnerOrAdmin]
     

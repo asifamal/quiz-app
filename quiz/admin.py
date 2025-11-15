@@ -27,9 +27,8 @@ class QuizAdmin(admin.ModelAdmin):
     readonly_fields = ('created_at', 'updated_at')
     
     def get_form(self, request, obj=None, **kwargs):
-        """Pre-fill created_by with current user on creation."""
         form = super().get_form(request, obj, **kwargs)
-        if obj is None:  # Only for new objects
+        if obj is None:
             form.base_fields['created_by'].initial = request.user
         return form
 

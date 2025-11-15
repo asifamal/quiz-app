@@ -4,7 +4,6 @@ from .models import User, Category, Quiz, Question, Option, Submission, Answer
 
 
 class UserSerializer(serializers.ModelSerializer):
-    """Serializer for User model."""
     
     class Meta:
         model = User
@@ -13,7 +12,6 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class RegisterSerializer(serializers.ModelSerializer):
-    """Serializer for user registration."""
     
     password = serializers.CharField(
         write_only=True,
@@ -32,7 +30,6 @@ class RegisterSerializer(serializers.ModelSerializer):
         }
     
     def validate(self, attrs):
-        """Validate that passwords match."""
         if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError(
                 {'password': "Password fields didn't match."}
@@ -40,7 +37,6 @@ class RegisterSerializer(serializers.ModelSerializer):
         return attrs
     
     def create(self, validated_data):
-        """Create and return a new user."""
         validated_data.pop('password2')
         password = validated_data.pop('password')
         user = User(**validated_data)
@@ -50,7 +46,6 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class CategorySerializer(serializers.ModelSerializer):
-    """Serializer for Category model."""
     
     class Meta:
         model = Category
@@ -59,7 +54,6 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class OptionSerializer(serializers.ModelSerializer):
-    """Serializer for Option model."""
     
     class Meta:
         model = Option
@@ -68,18 +62,17 @@ class OptionSerializer(serializers.ModelSerializer):
 
 
 class QuestionSerializer(serializers.ModelSerializer):
-    """Serializer for Question model with nested options."""
     
     options = OptionSerializer(many=True, read_only=True)
     correct_option_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    quiz = serializers.PrimaryKeyRelatedField(queryset=Quiz.objects.all())
     
     class Meta:
         model = Question
-        fields = ('id', 'text', 'correct_option_id', 'is_active', 'options', 'created_at', 'updated_at')
+        fields = ('id', 'quiz', 'text', 'correct_option_id', 'is_active', 'options', 'created_at', 'updated_at')
         read_only_fields = ('id', 'created_at', 'updated_at')
     
     def validate_correct_option_id(self, value):
-        """Validate that correct_option belongs to this question."""
         if value and hasattr(self, 'instance') and self.instance:
             if not self.instance.options.filter(id=value).exists():
                 raise serializers.ValidationError("Selected option does not belong to this question.")
@@ -101,7 +94,6 @@ class QuestionSerializer(serializers.ModelSerializer):
 
 
 class QuizSerializer(serializers.ModelSerializer):
-    """Serializer for Quiz model with nested questions."""
     
     questions = QuestionSerializer(many=True, read_only=True)
     category_name = serializers.CharField(source='category.name', read_only=True)
@@ -123,7 +115,6 @@ class QuizSerializer(serializers.ModelSerializer):
 
 
 class AnswerSerializer(serializers.ModelSerializer):
-    """Serializer for Answer model."""
     
     question_text = serializers.CharField(source='question.text', read_only=True)
     selected_option_text = serializers.CharField(source='selected_option.text', read_only=True)
@@ -137,7 +128,6 @@ class AnswerSerializer(serializers.ModelSerializer):
 
 
 class SubmissionSerializer(serializers.ModelSerializer):
-    """Serializer for Submission model."""
     
     answers = AnswerSerializer(many=True, read_only=True)
     user_username = serializers.CharField(source='user.username', read_only=True)
@@ -157,7 +147,6 @@ class SubmissionSerializer(serializers.ModelSerializer):
 
 
 class QuizSubmissionSerializer(serializers.Serializer):
-    """Serializer for submitting quiz answers."""
     
     answers = serializers.DictField(
         child=serializers.IntegerField(),
@@ -165,11 +154,9 @@ class QuizSubmissionSerializer(serializers.Serializer):
     )
     
     def validate_answers(self, value):
-        """Validate that all questions are answered and options are valid."""
         quiz = self.context['quiz']
         questions = quiz.questions.filter(is_active=True)
         
-        # Check if all questions are answered
         question_ids = set(questions.values_list('id', flat=True))
         answered_question_ids = set(int(k) for k in value.keys())
         
@@ -183,7 +170,6 @@ class QuizSubmissionSerializer(serializers.Serializer):
                 error_msg.append(f"Invalid question IDs: {list(extra)}")
             raise serializers.ValidationError(" ".join(error_msg))
         
-        # Validate that selected options belong to their respective questions
         for question_id, option_id in value.items():
             question = questions.get(id=int(question_id))
             if not question.options.filter(id=option_id).exists():
@@ -194,19 +180,16 @@ class QuizSubmissionSerializer(serializers.Serializer):
         return value
     
     def create(self, validated_data):
-        """Create submission and answers, calculate score."""
         quiz = self.context['quiz']
         user = self.context['request'].user
         answers_data = validated_data['answers']
         
-        # Create submission
         submission = Submission.objects.create(
             user=user,
             quiz=quiz,
-            score=0  # Will be calculated below
+            score=0
         )
         
-        # Create answers and calculate score
         correct_count = 0
         total_count = len(answers_data)
         
@@ -223,7 +206,6 @@ class QuizSubmissionSerializer(serializers.Serializer):
             if answer.is_correct:
                 correct_count += 1
         
-        # Update submission score
         submission.score = (correct_count / total_count) * 100 if total_count > 0 else 0
         submission.save()
         
